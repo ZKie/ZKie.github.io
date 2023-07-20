@@ -1,0 +1,138 @@
+---
+title: "Random effects demo"
+author: "Kie Zuraw"
+date: "Wednesday, October 18, 2017"
+output:
+  html_document:
+    toc: true
+---
+
+# Introduction and setup
+
+This is a demonstration of random effects in glmer() in R. 
+
+Set random seed, to ensure that we get the same results every time, and load any necessary packages
+
+```{r set_seed}
+set.seed(123)
+
+require(lattice) || install.packages("lattice")
+require(lattice)
+
+require(lme4) || install.packages("lme4")
+require(lme4)
+```
+
+# Create fake data
+
+Imaginary and slightly silly data:
+
+* f0 measured throughout the day from multiple speakers
+* there's a linear relationship, with f0 going up throughout the day
+* each speaker has their own intercept and slope, added to the basic intercept and slope
+
+Make a data frame with the fake data:
+
+```{r make_data}
+num_of_obs <- 1000 #how much total data I want
+my_sd <- 50 #standard deviation for random noise
+
+#make a data frame with speaker, each speaker's deviation from the baseline intercept, and a random sampling of times
+f0_by_time <- data.frame(speaker=rep_len(x=c("Anna","Bianca","Carmen","Danielle","Evita"),length.out=num_of_obs), rand_intercept=rep_len(x=c(0,20,-40,40,-20),length.out=num_of_obs), hours_from_noon=runif(n=num_of_obs,min=-6,max=6))
+
+#add f0 as a function of speaker's intercept and time (plus random noise)
+f0_by_time$f0 <- (160 + f0_by_time$rand_intercept) + 10*f0_by_time$hours_from_noon + rnorm(n=num_of_obs,mean=0,sd=my_sd)
+```
+
+Plot it:
+
+```{r plot_data}
+xyplot(f0_by_time$f0 ~ f0_by_time$hours_from_noon, groups=f0_by_time$speaker, auto.key=list(title="Speaker", corner=c(0.05, 1)), xlab="hours since noon", ylab="f0 (Hz)") #auto.key generates the legend
+```
+
+# Regression models
+
+Here's a model with no awareness of speaker (it thinks all the observations are independent):
+
+```{r no_speaker}
+f0.lm <- lm(f0 ~ hours_from_noon, data=f0_by_time)
+summary(f0.lm)
+```
+
+Here's a model that treats speaker as a fixed effect. The coefficient for each speaker is as compared to the baseline, Anna, whose intercept is the same as the overall intercept:
+
+```{r fixed_speaker}
+f0.lm.speaker_fixed <- lm(f0 ~ hours_from_noon + speaker, data=f0_by_time)
+summary(f0.lm.speaker_fixed)
+```
+
+And one that treats speaker as a random effect:
+
+```{r random_speaker}
+f0.lmer.speaker_random <- lmer(f0 ~ hours_from_noon + (1|speaker), data=f0_by_time)
+summary(f0.lmer.speaker_random)
+ranef(f0.lmer.speaker_random)
+```
+
+The numbers look pretty close.
+
+# Adding in speakers with less data
+
+Two more speakers are added, Francesca and Gaelle, but with just 20 observations each, and with extreme intercepts (-100 and 100.
+
+```{r add_Francesca_and_Gaelle}
+#same procedure as before for making the fake data, just with fewer observations and two new speakers
+num_of_obs_small <- 10
+
+small <- data.frame(speaker=rep_len(x=c("Francesca","Gaelle"), length.out=num_of_obs_small), rand_intercept=rep_len(x=c(-100,100),length.out=num_of_obs_small), hours_from_noon=runif(n=num_of_obs_small,min=-6,max=6))
+
+small$f0 <- (160 + small$rand_intercept) + 10*small$hours_from_noon + rnorm(n=num_of_obs_small,mean=0,sd=my_sd)
+
+f0_by_time <- rbind(f0_by_time,small) #add the new data on to the old data frame
+
+```
+
+```{r plot_data_withF_and_G}
+xyplot(f0_by_time$f0 ~ f0_by_time$hours_from_noon, groups=f0_by_time$speaker, auto.key=list(title="Speaker", corner=c(0.05, 1)), xlab="hours since noon", ylab="f0 (Hz)")
+```
+
+Let's compare speaker coefficients as a fixed effect to speaker's random intercepts.
+
+Again, a model that treats speaker as a fixed effect.
+
+```{r fixed_speaker_withF_and_G}
+f0.lm.speaker_fixed2 <- lm(f0 ~ hours_from_noon + speaker, data=f0_by_time)
+summary(f0.lm.speaker_fixed2)
+```
+
+And one that treats speaker as a random effect:
+
+```{r random_speaker_withF_and_G}
+f0.lmer.speaker_random2 <- lmer(f0 ~ hours_from_noon + (1|speaker), data=f0_by_time)
+summary(f0.lmer.speaker_random2)
+ranef(f0.lmer.speaker_random2)
+```
+
+These two new speakers' fitted numbers are closer to zero when treated as random intercepts than when treated as fixed-effect coefficients. Let's plot that:
+
+```{r plot_model_values}
+xyplot(f0 ~ speaker, data=f0_by_time, panel=function(x,y) {
+  panel.xyplot(x,y)
+  panel.abline(h=mean(f0_by_time$f0), lty=2) #dotted line at the overall mean (should be about 160)
+  panel.segments(x0=c(1:7)-0.3,y0=f0.lmer.speaker_random2@beta[1]+ranef(f0.lmer.speaker_random2)$speaker[,1],x1=c(1:7)+0.3,y1=f0.lmer.speaker_random2@beta[1]+ranef(f0.lmer.speaker_random2)$speaker[,1], col="green", lwd=2) #a short green line at each speaker's random intercept (plus the overall intercept), given in terms of starting and ending x and y coordinates on the plot
+  panel.segments(x0=c(1:7)-0.3,y0=f0.lm.speaker_fixed2$coefficients[1]+c(0,f0.lm.speaker_fixed2$coefficients[3:9]),x1=c(1:7)+0.3,y1=f0.lm.speaker_fixed2$coefficients[1]+c(0,f0.lm.speaker_fixed2$coefficients[3:9]),col="red",lwd=2) # a short red line at each speaker's coefficient in the speaker-as-fixed-effect model (plus the overall intercept)
+  })
+
+```
+
+Red lines show intercept+coefficients in fixed-effects model. Green lines show intercept+random intercepts in mixed-effects model (not visible for first five speakers, because red line is on top of green line)
+
+So how come the numbers are not exactly the same for Francesca and Gaelle? Why are they closer to the overall intercept?
+
+* the coefficients for fixed effects are estimated using least squares/maximum likelihood (maybe with some "regularization", or penalty on making coefficients too big without lots of evidence)
+* the random intercepts are estimated using "shrinkage"
++ each speaker's personal intercept is a weighted average (i.e., a blend) of the intercept seen in that speaker's data and the intercept seen in the data overall
++ the point is to bias the random intercepts towards the overall intercept
++ bias how much, and how exactly (e.g., does it _have_ to be using a weighted average)? Bleh, don't ask me. Or rather, see the documentation for the lme4 package for how lmer() does it.
+
+One of the best tutorials I've seen on this is by USC's Sandrah Eckel: (http://www-hsc.usc.edu/~eckel/talk_CDrandomInterceptFeb2010.pdf). I copied her format for showing the fixed-effects coefficients vs. random intercepts.
