@@ -1,0 +1,38 @@
+syllabic,	`,	subscript,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+creaky-voiced,	0,	subscript,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+voiceless,	8,	subscript,	None,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+breathy-voiced,	-,	subscript,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+postalveolar,	=,	subscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	-,	None,	None,	None,	None,	None,	None,	None,	None
+dental,	5,	subscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	-,	None,	None,	None,	None,	None,	None,	None,	None
+fronted velar,	+,	subscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	+,	+,	-,	None,	None,	None
+backed velar,	=,	subscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	-,	None,	None,	None
+stressed,	È,	postscript,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+long,	ù,	postscript,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+aspirated,	H,	postscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	-,	-,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+palatalized,	J,	postscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+labialized,	W,	postscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+velarized,	ì,	postscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	None
+pharyngealized,	³,	postscript,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	None
+nasalized,	),	superscript,	None,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+rhotic,	Õ,	postscript,	+,	None,	None,	-,	+,	None,	None,	None,	None,	-,	-,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	+,	None,	None,	None,	None,	None
+ejective,	',	postscript,	None,	None,	None,	+,	-,	None,	None,	None,	None,	-,	-,	-,	-,	-,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+EndOfRequirements
++,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	-,	None,	None,	None,	None,	None,	None,	None,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	+,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	+,	None
+None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	-,	None,	-,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	-,	-,	+,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	-,	+,	-,	+,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	+,	+,	+,	-,	None,	None,	None,	None,	None,	None,	None
+None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	-,	+,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None,	None
+EndOfDiacritics
