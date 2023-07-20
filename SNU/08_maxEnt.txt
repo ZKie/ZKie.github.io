@@ -1,0 +1,53 @@
+##Lieberman et al. data, except I added some more variables
+irregulars=read.table("C:/Users/Kie/Documents/My\ Dropbox/TEACHING_SNUSeminar_2012/08_nature06137_more_variables.txt",
+  header=TRUE)
+summary(irregulars)
+head(irregulars)
+
+##first, a plain logistic regression, with binary dependent variable
+irregs.glm = glm(Modern_Irregular ~
+	nasal_in_stressed_coda +
+	stressed_onset_complex #+
+	#ends_t_d,
+	, data = irregulars,
+	family=binomial)
+summary(irregs.glm)
+
+##if we try to use glm() with a multi-valued dependent variable,
+#it doesn't work
+
+irregs.glm_multi = glm(modern_type ~
+	nasal_in_stressed_coda +
+	stressed_onset_complex +
+	ends_t_d,
+	data = irregulars,
+	family=binomial)
+summary(irregs.glm_multi)
+
+
+##instead, we have to use a different function
+require(nnet) #make sure the "nnet" package is loaded
+
+
+irregulars$modern_type2 <- 
+   relevel(irregulars$modern_type, ref = "regular") #trick to 
+   #make R treat "regular" as the baseline
+
+irregs.multinom <- multinom(modern_type2 ~
+	nasal_in_stressed_coda +
+	stressed_onset_complex +
+	ends_t_d,
+	data = irregulars)
+
+summary(irregs.multinom)
+
+
+
+
+
+
+
+
+
+
+

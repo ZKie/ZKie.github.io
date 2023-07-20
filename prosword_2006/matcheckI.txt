@@ -1,0 +1,723 @@
+use strict;
+use warnings;
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+use Text::Levenshtein qw(distance);
+use Getopt::Long;
+use Pod::Usage;
+
+#My attempt to implement Baayen & al.'s MATCHECK model
+
+#"BSS"
+#Harald Baayen, Robert Schreuder, and Richard Sproat (2000).
+#Modeling morphological segmentation in a parallel dual route
+#framework for visual word recognition.
+#In Frank van Eynde & David Gibbon (eds.)
+#Lexicon Development for Speech and Language Processing.  Pp. 267-293.
+#"B&S"
+#Harald Baayen & Robert Schreuder (2000).
+#Towards a psycholinguistic computational model
+#for morphological parsing.
+#Transactions of the Royal SocietyLondon A 358: 1281-1293.
+
+my $matcheck_VER = '1.1';
+
+#DEFAULT PARAMETER VALUES
+my $time_steps = 100;
+my $basic_theta_threshold = 0.05; #free parameter, (0,1]  B&S use 0.3
+my $alpha_spike = 1.2; #free parameter  B&S use 1.2
+my $delta_baseline_decay = 0.3; #free parameter , (0,1)  B&S use 0.3
+my $zeta_forest = 4; #free parameter  B&S use 1.5
+my $epsilon_system_noise = 0; #free parameter--see BSS pp. 276-277 BSS use 10
+my $kappa_summed_activ_threshold = 0; #free parameter--see BSS p. 289 BSS use 0
+my $rho_info_extraction_rate = 1; #free parameter--see BSS pp. 289-290 BSS use 2
+#when rho is changed from 1 to n, change delta to delta^(1/rho)
+#and change similarity s to rho*s
+#I didn't understand how to use rho, so it's not implemented here, except
+#that similarity is rho*s
+my $edge_alignment = 'b';
+
+#READ IN COMMAND-LINE ARGUMENTS
+#Help info--code cribbed from
+#http://qs321.pair.com/~monkads/bare/?node=155288
+my $opt_debug = 0;
+my ($opt_help, $opt_man, $opt_versions);
+my $man = 0;
+my $help = 0;
+my $lexicon_file = '';
+my $targets_file = '';
+my $buffer_output_file = '';
+my $activations_output_file = '';
+GetOptions(
+  'debug=i' => \$opt_debug,
+  'help!' => \$opt_help,
+  'man!' => \$opt_man,
+  'versions!' => \$opt_versions,
+  'time_steps=i' => \$time_steps,
+  'theta=f' => \$basic_theta_threshold,
+  'alpha=f' => \$alpha_spike,
+  'delta=f' => \$delta_baseline_decay,
+  'zeta=f' => \$zeta_forest,
+  'epsilon=f' => \$epsilon_system_noise,
+  'kappa=f' => \$kappa_summed_activ_threshold,
+  'rho=i' => \$rho_info_extraction_rate,
+  'edge=s' => \$edge_alignment,
+  'lexicon_file=s' => \$lexicon_file,
+  'targets_file=s' => \$targets_file,
+  'buffer_output_file=s' => \$buffer_output_file,
+  'activations_output_file=s' => \$activations_output_file
+) or pod2usage(-verbose => 1) && exit;
+
+pod2usage(-verbose => 1) && exit if ($opt_debug !~ /^[01]$/);
+pod2usage(-verbose => 1) && exit if defined $opt_help;
+pod2usage(-verbose => 2) && exit if defined $opt_man;
+
+my $theta_threshold = $basic_theta_threshold;
+if ($lexicon_file eq '') {
+  print ("You must specify a lexicon file.\n");
+}
+if ($targets_file eq '') {
+  print ("You must specify a targets file.\n");
+}
+if ($buffer_output_file eq '') {
+  $buffer_output_file = "$targets_file.buffer.txt";
+}
+if ($activations_output_file eq '') {
+  $activations_output_file = "$targets_file.activations.txt";
+}
+
+print ("working...\n");
+
+#SETTING UP VARIABLES
+
+#read in lexical entries and frequencies from a file
+#format should be one item per line, frequency-tab-string:
+#1  apple
+#100 avocado
+#etc.
+open (LEXICONFILE, $lexicon_file) || die "can't open lexicon file: $!";
+my %frequencies = ();
+my $line;
+while(defined($line = <LEXICONFILE>)) {
+  chomp($line);
+  my @contents=split(/\t/,$line);
+  $frequencies{$contents[1]} = $contents[0];
+}
+
+close (LEXICONFILE) || die "couldn't close lexicon file: $!";
+
+my %probability;
+my %r_reached_threshold;
+my %list_of_threshold_morphs;
+my @threshold_morphs_this_timestep;
+my $target;
+my $t_time;
+my @spans_reached;
+my %activations;
+my %delta_decay_rate;
+my %similarities;
+my %substrings;
+my $s_summed_activation;
+my $new_threshold_morphs;
+
+#LOOP THROUGH TARGETS
+
+#get, from an input file, list of words to parse and, for each word,
+#lexical entries of interest to track
+#format should be target-tab-itemtotrack1-tab-itemtotrack2-tab etc.
+#unpleasant un  pleasant  unpleasant
+#ungrammaticality un  grammatical grammatic al  ical  ungrammaticality  grammaticality
+open (TARGETFILE, $targets_file) || die "can't open targets file: $!";
+my %targets = ();
+while(defined($line = <TARGETFILE>)) {
+  chomp($line);
+  my @contents=split(/\t/,$line);
+  $target = shift(@contents);
+  $targets{$target} = [@contents]; #the rest of the line should be
+  #the ones to track in the output file
+}
+close (TARGETFILE) || die "couldn't close lexicon file: $!";
+
+open (BUFFEROUTPUTFILE, ">.$buffer_output_file") || die "can't open file to put buffer results in: $!";
+open (OUTPUTFILE, ">.$activations_output_file") || die "can't open file to put activation results in: $!";
+
+my $stuff_to_print;
+while(($target,$stuff_to_print) = each(%targets)) {
+
+  #TIME-STEP-ZERO ACTIVITIES
+  %activations = ();
+  %delta_decay_rate = ();
+  %r_reached_threshold = ();
+  %similarities = ();
+  %substrings = ();
+
+  @spans_reached = ();
+  %probability = ();
+  %list_of_threshold_morphs = ();
+  $theta_threshold = $basic_theta_threshold;    #reinitialize theta
+  
+  #copy resting activations
+  $s_summed_activation = 0;
+  %activations = %frequencies;
+
+  my $w;
+  %substrings = ();
+  while(($w,) = each(%frequencies)) {
+    #initialize threshold-reaching: no one has reached
+    $r_reached_threshold{$w} = 0;
+    #initialize individual decay rates
+    $delta_decay_rate{$w} = f_forest_before_trees(
+       g_short_and_frequent($delta_baseline_decay, $alpha_spike, $w),
+       $zeta_forest, $w);
+    #precompile similarity of each item to target
+    $similarities{$w} = $rho_info_extraction_rate*similarity($w,$target);
+    #decide ahead of time whether each item is a substring of the target
+    #this means fewer edge-alignments need to be calculated
+    if ($target =~ /$w/) {
+      $substrings{$w} = 1;
+    }
+  }
+
+  #set up header line in output files
+  print (OUTPUTFILE "TARGET $target\n");
+  print (BUFFEROUTPUTFILE "TARGET $target\n");
+  print ("TARGET $target\n");
+  my @array_to_print = @{$stuff_to_print};
+  foreach my $wd (@array_to_print) {
+    print (OUTPUTFILE "$wd\t");
+  }
+  foreach my $wd (@array_to_print)  {
+    print (OUTPUTFILE "$wd\t");
+  }
+  print (OUTPUTFILE "\n");
+  foreach my $wd (@array_to_print) {
+    if (defined $activations{$wd}) {
+      print (OUTPUTFILE "$activations{$wd}\t");
+    }
+  }
+  print (OUTPUTFILE "\n");
+
+  #STEP THROUGH TIME
+  for($t_time=1; $t_time<=$time_steps; $t_time++)
+  {
+   update_activations(); #this is also the place where the decrease in summed
+   #activation gets checked
+   $new_threshold_morphs = 0;
+   update_probabilities();
+   #print activations and probabilities to file
+   print_timestep(@array_to_print);
+   #determine if a spanning has occurred
+   my @array_of_threshold_morphs = ();
+   #my $w;
+   #I had a foreach here before, but I'm changing it to a
+   #while+each
+   #in case this hash can get really big
+   #foreach my $w (keys(%list_of_threshold_morphs)){
+   while(($w,) = each(%list_of_threshold_morphs)){
+     push(@array_of_threshold_morphs, $w);
+   }
+   if($new_threshold_morphs==1) {
+    parse('', 0, $target, @array_of_threshold_morphs);
+   }
+  }
+}
+close (BUFFEROUTPUTFILE) || die "couldn't close buffer results file: $!";
+close (OUTPUTFILE) || die "couldn't close results file: $!";
+
+#SUBROUTINES
+
+sub parse {
+  my $prefix = shift;
+  my $prefix_length = shift;
+  my $current_target = shift;
+  my @candidates = @_;
+  my $span = '';
+
+  foreach my $w (@candidates) {
+    if($current_target eq $w) {
+      $span = $prefix.$w;
+      unless (grep { "$_" eq "$span" } @spans_reached) {
+        print(BUFFEROUTPUTFILE "SPANNING $span at $t_time\n");
+        print("SPANNING $span at $t_time\n");
+        push (@spans_reached, $span);
+      }
+    }
+    elsif($current_target =~ /^$w/) {
+      my $length_of_w = length($w); #an attempt to speed up the program
+      $prefix = $prefix.$w.'+';
+      $prefix_length += $length_of_w;
+      my $new_target = substr($current_target,$length_of_w);
+      #recursive call to parse()!!
+      parse($prefix,$prefix_length,$new_target,@candidates);
+      #pop this morpheme off the prefix string
+      $prefix = substr($prefix,0,length($prefix)-$length_of_w-1);
+      $prefix_length -= $length_of_w;
+      #why did I have that line??
+    }
+  }
+}
+
+sub print_timestep{  #should get passed the array of items
+#that have been selected (in an input file) for tracking in
+#the output file
+    my @selected_items = @_;
+    foreach my $w (@selected_items) {
+      if(defined $activations{$w}) {
+        print (OUTPUTFILE "$activations{$w}\t");
+      }
+      else {
+        print (OUTPUTFILE "0\t");
+      }
+    }
+    foreach my $w (@selected_items) {
+      if(defined $probability{$w}) {
+        print (OUTPUTFILE "$probability{$w}\t");
+      }
+      else {
+        print (OUTPUTFILE "0\t");
+      }
+    }
+    print (OUTPUTFILE "\n");
+    #if($t_time/5 == int($t_time/5)) {
+    #  print("time step is $t_time\n");
+    #}
+}
+
+sub g_short_and_frequent { #B&S eq. (2.3) or Baayen (15)--slightly different
+  #There are two different versions of this function; comment one out
+   my $delta = shift;
+   my $alpha = shift;
+   my $w_node = shift;
+   my $g;
+   my $length_of_w = length($w_node); #an attempt to speed up the program
+   $g = $delta * $length_of_w/($length_of_w+
+     ($alpha/$length_of_w)*log($frequencies{$w_node}));  #B&S p. 1284
+   #$g = $delta /
+   #   (1+$alpha*log($length_of_w+1)/log($frequencies{$w_node})); #Baayen p. 270
+   #not sure how to use this version correctly: it requires that all frequencies
+   #be higher than one, or else log(freq)=0, and you have to divide by zero...
+   return $g;
+}
+sub f_forest_before_trees { #B&S (2.4)
+   my $delta = shift;
+   my $zeta = shift;
+   my $w_node = shift;
+   my $f;
+   my $length_of_w = length($w_node);  #an attempt to speed up the program
+   my $length_of_target = length($target); #an attempt to speed up the program
+   if($zeta>0) {
+     $f = $delta+(1-$delta)*(abs($length_of_w-$length_of_target)/
+       max($length_of_w,$length_of_target))**$zeta
+   }
+   else {
+    $f = $delta;
+   #B&S's equation looks like it has a typo, referring
+   #to delta sub i--but this function is being used
+   #to determine delta sub i...so I guessed that they
+   #meant delta
+   #In Baayen (p. 270), it's just delta
+   }
+   return $f;
+
+}
+
+sub update_probabilities {   #B&S eq. (2.1)
+  my $w;
+  my $sum_of_activations = 0;
+  while(($w,) = each(%frequencies)) {
+    $sum_of_activations += $activations{$w};
+  }
+  if (abs($s_summed_activation-$sum_of_activations) <
+    $kappa_summed_activ_threshold) {
+    $theta_threshold = $theta_threshold/2;
+    #"in our current implementaton, the threshold is simply halved
+    #at each time step that meets the condition S(t-1)-S(t)<K" BSS p. 289
+    #I don't think I fully understand this, because it would mean
+    #that while total activation is increasing (towards the beginning of
+    #the simulation), the condition for halving the threshold will
+    #always be met, assuming positive kappa.
+    #Maybe they mean for the condition to apply only after total activation
+    #has reached a maximum?
+    #Anyway, I've changed it here to require that the *absolute value of*
+    #the change be less than kappa--that way, if kappa is zero,
+    #the threshold never gets lowered
+    #note that unless kappa is very small or the number of timesteps is not
+    #too big, this can result in all the frequent morphs reaching threshold
+    #towards the end
+  }
+  $s_summed_activation = $sum_of_activations;
+  #I'm assuming that the potential lowering of theta occurs
+  #not at the very end of the timestep, but rather before
+  #it's determined whether each item has reached threshold
+  while(($w,) = each(%frequencies)) {
+    $probability{$w} = $activations{$w} /
+      ($sum_of_activations + $epsilon_system_noise);
+  }
+  @threshold_morphs_this_timestep = ();
+  while(($w,) = each(%frequencies)) {
+    if($r_reached_threshold{$w} == 0 && $probability{$w} > $theta_threshold) {
+      $r_reached_threshold{$w} = 1;
+      $new_threshold_morphs = 1;
+      push (@threshold_morphs_this_timestep, $w);
+      print (BUFFEROUTPUTFILE "time $t_time: $w reached threshold $theta_threshold\n");
+      print ("time $t_time: $w reached threshold $theta_threshold\n");
+    }
+  }
+  foreach $w (@threshold_morphs_this_timestep) {
+    if (not(defined $list_of_threshold_morphs{$w})) {  #avoid duplicates
+      $list_of_threshold_morphs{$w} = 1;
+    }
+  }
+}
+
+sub update_activations {    #B&S eq. (2.2)
+  my $w;
+  while(($w,) = each(%frequencies)) {
+    my $on_hold_value = on_hold($w);  #an attempt to speed up the program
+    my $decay_rate_of_w = $delta_decay_rate{$w}; #an attempt to speed up the program
+    my $activation_of_w = $activations{$w};
+    my $initial_activation_of_w = $frequencies{$w};
+    $activations{$w} = $on_hold_value*$activation_of_w/$decay_rate_of_w
+      + (1-$on_hold_value)*($initial_activation_of_w+$decay_rate_of_w*
+      abs($activation_of_w-$initial_activation_of_w));
+      #at some point I thought I needed to take the absolute value
+      #of that difference--now I think it should always be positive
+      #anyway...
+  }
+}
+
+sub on_hold {   #indicator function
+#a node is on hold if its activation weight is still
+#being allowed to increase
+#BSS pp. 288-289 (in def. of 'activation weight')
+    my $w_node = shift;
+    my $indicator;
+    if($r_reached_threshold{$w_node}==1) {
+      $indicator = 0;
+    }
+    elsif($similarities{$w_node}>=$t_time) {
+      $indicator = 1;
+    }
+    elsif(defined $substrings{$w_node}) {
+      if (edge_aligned($w_node,$target)) {
+        $indicator = 1;
+      }
+      else {
+        $indicator = 0;
+      }
+    }
+    else {
+      $indicator = 0;
+    }
+    return $indicator;
+}
+
+sub similarity {  #BSS p. 288, under 'similarity metric'
+  my $w1 = shift;
+  my $w2 = shift;
+  my $similarity;
+  my $match = $w1=~/$w2/;
+  my $length_of_w2 = length($w2);
+  $similarity = $match*$length_of_w2+
+   (1-$match)*($length_of_w2-distance($w1,$w2));
+  return $similarity;
+}
+
+sub edge_aligned {
+  my $w1 = shift;
+  my $w2 = shift;
+  my $success = 0;
+  
+  if ($edge_alignment eq 'l') {
+    if($w2 =~ /^$w1/) {   #left-alignment only
+      $success = 1;
+    }
+    else  {  #recursive calls to edge_aligned
+    #see BSS pp. 280-281: once an outer morpheme becomes
+    #available, the adjacent inner morpheme acts as though
+    #it's edge-aligned
+      my $w;
+      while(($w,)= each(%list_of_threshold_morphs)) {
+        my $substring;
+        my $length_of_w = length($w);
+        if(length($w1)>$length_of_w){
+          if($w =~ /^$w1/
+            && edge_aligned(substr($w1,$length_of_w),$w2)) {  #recursion!
+            $success = 1;
+          }
+        }
+      }
+    }
+    return $success;
+  }
+  elsif ($edge_alignment eq 'r') {
+    if($w2 =~ /$w1$/) {   #right-alignment only
+      $success = 1;
+    }
+    else  {  #recursive calls to edge_aligned
+    #see BSS pp. 280-281: once an outer morpheme becomes
+    #available, the adjacent inner morpheme acts as though
+    #it's edge-aligned
+      my $w;
+      while(($w,)= each(%list_of_threshold_morphs)) {
+        my $substring;
+        my $length_of_w = length($w);
+        if(length($w1)>$length_of_w){
+          if($w =~ /$w1$/
+            && edge_aligned(substr($w1,$length_of_w),$w2)) {  #recursion!
+            $success = 1;
+          }
+        }
+      }
+    }
+    return $success;
+  }
+  else {
+    if($w2 =~ /^$w1/ || $w2 =~ /$w1$/) {   #either-edge alignment
+    #(default or specified 'b')
+      $success = 1;
+    }
+    else  {  #recursive calls to edge_aligned
+    #see BSS pp. 280-281: once an outer morpheme becomes
+    #available, the adjacent inner morpheme acts as though
+    #it's edge-aligned
+      my $w;
+      while(($w,)= each(%list_of_threshold_morphs)) {
+        my $substring;
+        my $length_of_w = length($w);
+        if(length($w1)>$length_of_w){
+          if($w =~ /^$w1/
+            && edge_aligned(substr($w1,$length_of_w),$w2)) {  #recursion!
+            $success = 1;
+          }
+          elsif($w =~ /$w1$/
+            && edge_aligned(substr($w1,$length_of_w),$w2)) {  #recursion!
+            $success = 1;
+          }
+        }
+      }
+    }
+    return $success;
+  }
+}
+
+#more help stuff--also cribbed from
+#http://qs321.pair.com/~monkads/bare/?node=155288
+END{
+  if(defined $opt_versions){
+    print
+      "\nModules, Perl, OS, Program info:\n",
+      "  Pod::Usage            $Pod::Usage::VERSION\n",
+      "  Getopt::Long          $Getopt::Long::VERSION\n",
+      "  strict                $strict::VERSION\n",
+      "  Perl                  $]\n",
+      "  OS                    $^O\n",
+      "  matcheckI.pl           $matcheck_VER\n", #check here that program name correct
+      "  $0\n",
+      "\n\n";
+  }
+}
+
+=head1 NAME
+
+ matcheckI.pl
+
+=head1 SYNOPSIS
+
+ perl matcheckI.pl -l lexicon.txt -ta targets.txt
+
+=head1 DESCRIPTION
+
+ Run Baayen et al.'s Matcheck model of word recognition.
+ 
+ Harald Baayen, Robert Schreuder, and Richard Sproat (2000).
+ Modeling morphological segmentation in a parallel dual route framework for visual word recognition.
+ In Frank van Eynde & David Gibbon (eds.)
+ Lexicon Development for Speech and Language Processing.  Pp. 267-293.
+
+ Harald Baayen & Robert Schreuder (2000).
+ Towards a psycholinguistic computational model for morphological parsing.
+ Transactions of the Royal SocietyLondon A 358: 1281-1293.
+
+ Switches that don't define a value can be done in long or short form.
+ eg:
+   matcheckI.pl --man
+   matcheckI.pl -m
+   matcheckI.pl --time_steps 50
+   matcheckI.pl -t 50
+   
+ Notes:
+ 1. rho (information extraction rate) is not implemented. Value is 1.
+ 
+ 2. There are two different versions of the g() function in the two source
+ articles (B&S eq. 2.3, BS&S (15)). The one implemented here is B&S p. 1284.
+ 
+ 3. There are slightly different versions of the f() function in the two source
+ articles. The one implemented here follows BS&S (p. 270) in using delta
+ instead of delta-sub-i.
+ 
+ 4. BS&S p. 289: "in our current implementaton, the threshold is simply halved
+ at each time step that meets the condition S(t-1)-S(t)<K"
+ I was confused about this [does it would mean
+ that while total activation is increasing (towards the beginning of
+ the simulation), the condition for halving the threshold will
+ always be met, assuming positive kappa?
+ Maybe the condition applies only after total activation
+ has reached a maximum?]
+ I changed it here to require that the *absolute value of*
+ the change be less than kappa--that way, if kappa is zero,
+ the threshold never gets lowered.
+ Note that unless kappa is very small or the number of timesteps is not
+ too big, this can result in all the frequent morphs reaching threshold
+ towards the end of every run.
+ I assume that the potential lowering of theta occurs
+ not at the very end of the timestep, but rather before
+ it's determined whether each item has reached threshold.
+    
+ 5. Matcheck privileges lexemes that are edge-aligned with the target.
+ This implementation also gives the option of privileging lexemes that
+ are edge-aligned only to the left, or only to the right.
+
+=head1 ARGUMENTS
+
+ --help      print Options and Arguments instead of running Matcheck
+ --man       print complete man page instead of running Matcheck
+ 
+ --time_steps Number of times to run each item. Integer. Default is 100
+ --theta    Threshold parameter. Real number in interval (0,1]. Default is 0.05
+ --alpha    Spike parameter. Real number>=0. Default is 1.2
+ --delta    Baseline-decay-rate parameter. Real number in interval (0,1). Default is 0.3
+ --zeta     Forest parameter. Real number>=0. Default is 4
+ --epsilon  System noise. Real number>=0. Default is 0
+ --kappa    Summed-activation threshold. Real number>=0. Default is 0
+ --rho      Information-extraction rate. Integer>=1. NOT IMPLEMENTED. Default is 1
+ --edge     Edge alignment. 'l' for left, 'r' for right, 'b' for both. Default is 'b'.
+ 
+ --lexicon_file   Text file specifying lexicon with frequencies. Obligatory.
+ --targets_file   Text file specifying targets to be identified. Obligatory.
+ --buffer_output_file       Destination file for buffer results. Default is targets_file."buffer.txt"
+ --activation_output_file   Destination file for activation results. Default is targets_file."activations.txt"
+
+=head1 FILE_FORMATS
+
+=head2 INPUT_FILES
+ 
+ LEXICON file should be tab-separated, one word per line, frequency then form
+ The file should include any bound morphemes
+ that you want Matcheck to be able to recognize:
+ 
+16839	im
+1	imponderables
+3	import
+12	importance
+2	imposing
+1	imposition
+
+ TARGETS file should be tab-separated, one target word per line, full form then
+ any lexemes whose activation during the recognition of that word
+ you want to track in the activation output file:
+
+ablaze	ablaze	a	blaze
+abnormal	abnormal	ab	normal norm  al
+abroad	abroad	a	broad
+absent	absent	ab	sent
+abstract	abstract	ab	stract
+absurd	absurd	ab	surd
+...
+
+=head2 OUTPUT FILES
+  
+    BUFFER file gives, for each target, a list of lexemes (if any)
+    that reached threshold, along with the timestep:
+    
+TARGET impotent
+time 7: i reached threshold 0.1
+time 20: im reached threshold 0.1
+time 31: imp reached threshold 0.1
+TARGET imprecision
+time 8: i reached threshold 0.1
+time 8: impression reached threshold 0.1
+time 20: im reached threshold 0.1
+time 31: imp reached threshold 0.1
+...
+
+  Whenever a complete spanning is found, it's noted:
+  
+TARGET unable
+time 1: the reached threshold 0.05
+time 2: have reached threshold 0.05
+time 2: one reached threshold 0.05
+time 4: able reached threshold 0.05
+time 5: un reached threshold 0.05
+SPANNING un+able at 5
+time 7: e reached threshold 0.05
+time 7: le reached threshold 0.05
+time 9: unable reached threshold 0.05
+SPANNING unable at 9
+time 10: u reached threshold 0.05
+time 12: una reached threshold 0.05
+time 12: ble reached threshold 0.05
+SPANNING una+ble at 12
+
+  ACTIVATIONS file tracks, for each target, the activation (and share of
+  total activation), at each timestep, of each lexeme specified in the
+  targets file for that target (decimal places truncated in example):
+  
+  TARGET infamous
+  infamous	in	      famous    infamous	in	    famous
+  52817	79
+  0	        74596.0 	195.04	  0	        0.0113	2.98169470281474e-005
+  0	        105355.64	484.4276	0        	0.0154	7.11996576674887e-005
+  0	        90016.45	1198.6	  0       	0.0151	0.000202
+  0	        79155.6 	2968.0	  0       	0.0151	0.000567
+  0	        71465.8 	7348.4	  0       	0.0147	0.001516
+  0	        66021.1	  18192.1 	0        	0.0147	0.003279
+  0	        62166.0	  7395.1	  0	        0.0111	0.003642
+  0	        59436.5 	3034.1	  0	        0.0133	0.000687
+ 
+=head1 OPTIONS
+
+ --versions   print Modules, Perl, OS, Program info
+ --debug 0    don't print debugging information (default)
+ --debug 1    print debugging information
+
+ 
+
+=head1 AUTHOR
+
+Kie Zuraw, but implementing:
+
+ Harald Baayen, Robert Schreuder, and Richard Sproat (2000).
+ Modeling morphological segmentation in a parallel dual route framework for visual word recognition.
+ In Frank van Eynde & David Gibbon (eds.)
+ Lexicon Development for Speech and Language Processing.  Pp. 267-293.
+
+ Harald Baayen & Robert Schreuder (2000).
+ Towards a psycholinguistic computational model for morphological parsing.
+ Transactions of the Royal SocietyLondon A 358: 1281-1293.
+
+=head1 CREDITS
+
+=head1 TESTED
+
+=head1 BUGS
+
+None that I know of--but haven't debugged thoroughly.
+
+=head1 TODO
+
+   Look for bugs.
+   Print modules... info on error
+
+=head1 UPDATES
+
+ 2006-01-24
+   Minor enhancements to help, file naming, and output to console.
+
+ 2006-01-09
+   Better handling of arguments.
+   Help info added.
+
+ 2006-12
+   Initial working code
+
+=cut

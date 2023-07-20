@@ -1,0 +1,153 @@
+##This is my script file for Sept. 6, 2012 computer lab
+
+##Open the Hayes/White data and look at it
+hayes_white = read.table("C:/Users/snu/Desktop/Temp/HayesWhite_SubjectData.txt", header=TRUE)
+head(hayes_white)
+summary(hayes_white)
+hayes_white$LogResponse
+head(hayes_white$LogResponse)
+names(hayes_white)
+
+##Plot it
+plot(hayes_white$Albright2009, hayes_white$LogResponse)
+plot(hayes_white$Hwi_Score, hayes_white$LogResponse)
+plot(hayes_white$Hwi_ConstraintWeight, hayes_white$LogResponse)
+plot(hayes_white$TrialNum, hayes_white$LogResponse)
+plot(hayes_white$Subject, hayes_white$LogResponse)
+plot(hayes_white$TestOrControl, hayes_white$LogResponse)
+
+##Make a linear regression model
+hayes_white.lm1 = lm(hayes_white$LogResponse ~ hayes_white$Albright2009)
+summary(hayes_white.lm1)
+###resulting regression equation: y = 4.384 + 0.003757*x
+##Let's try to find the prediction for different values of x (x=Albright2009):
+4.384 + 0.003757*0
+4.384 + 0.003757*0.00001
+4.384 + 0.003757*0.0001
+4.384 + 0.003757*0.001
+4.384 + 0.003757*0.01
+4.384 + 0.003757*0.1
+##The slope is very small!! Similar values for y despite changing x
+plot(hayes_white$Albright2009, hayes_white$LogResponse)
+abline(hayes_white.lm1, col="blue")
+##When we plot it,we can see that the slope is very small. y is always close to 4.4
+
+##Make another linear regression model with a different indep. variable
+hayes_white.lm2 = lm(hayes_white$LogResponse ~ hayes_white$Naturalness)
+summary(hayes_white.lm2)
+##resulting regression equation: y = 4.34108 + 0.15818*x
+#This slope looks bigger...
+#But what are the possible values of x?
+summary(hayes_white$Naturalness) #just "natural" (0) or "unnatural" (1)
+#So there are only two values to try:
+4.34108 + 0.15818*0
+4.34108 + 0.15818*1
+#predicts a difference of about 0.15 log rating points between natural and unnatural
+#I wonder what will happen if I try to plot this?
+plot(hayes_white$Naturalness, hayes_white$LogResponse)
+abline(hayes_white.lm2, col="red")
+
+
+##Make another linear regression model with 2 indep. variables
+hayes_white.lm3 = lm(hayes_white$LogResponse ~
+    hayes_white$TestOrControl+ hayes_white$Naturalness)
+summary(hayes_white.lm3)
+##The resulting regression equation is: y = 4.72127 + -0.76370*x1 + 0.15984*x2
+#But x1 (TestOrControl) and x2 (Naturalness) are both binary.
+#So there are only four combinations of values to try
+4.72127 + -0.76370*0 + 0.15984*0 #control, natural
+4.72127 + -0.76370*0 + 0.15984*1 #control, unnatural
+4.72127 + -0.76370*1 + 0.15984*0 #test, natural
+4.72127 + -0.76370*1 + 0.15984*1 #test, unnatural
+#There's a range of almost 1 log rating point
+#But do all 4 combinations really occur?
+table(hayes_white$TestOrControl, hayes_white$Naturalness) #yes, they do! OK.
+
+##Make a linear regression model with an interaction term
+hayes_white.lm4 = lm(hayes_white$LogResponse ~
+    hayes_white$TestOrControl* hayes_white$Naturalness)
+summary(hayes_white.lm4)
+#regression equation is:
+#y = 5.00320 + -1.33002*TestOrControl +
+#     -0.40329*Naturalness +
+#     1.12872*TestOrControl*Naturalness
+#again there are only 4 values to try:
+5.00320 + -1.33002*0 + -0.40329*0 + 1.12872*0*0 #control, natural
+#interaction term doesn't matter
+
+5.00320 + -1.33002*0 + -0.40329*1 + 1.12872*0*1 #control, unnatural
+#interaction term doesn't matter (0*1=0!!)
+
+5.00320 + -1.33002*1 + -0.40329*0 + 1.12872*1*0 #test, natural
+#interaction term doesn't matter (0*1=0!!)
+
+5.00320 + -1.33002*1 + -0.40329*1 + 1.12872*1*1 #test, unnatural
+#predicted value is a little bigger
+#-->Being test gives lower value than control
+#Being unnatural gives lower value than natural
+#But being test AND unnatural gives a higher value than otherwise expected
+
+##This is a trick to be able to plot all 4 combinations
+##I'm making a new variable that's a combination of two old variables
+hayes_white$combined_variables = 
+  factor(paste(hayes_white$TestOrControl, hayes_white$Naturalness))
+head(hayes_white$combined_variables)
+##Now I plot this new variable
+plot(hayes_white$combined_variables, hayes_white$LogResponse)
+summary(hayes_white)
+abline(hayes_white.lm4, col="red")
+
+########################3
+
+##Read in Hungarian data and look at it
+hungarian = read.table("C:/Users/snu/Desktop/Temp/03_Hungarian_no_vowels2.txt", header=TRUE)
+summary(hungarian)
+names(hungarian)
+
+##Make a logistic regression model
+hungarian.glm = glm(hungarian$is_output_nak ~
+    hungarian$number_of_neutral_Vs
+   + hungarian$last_V_height
+   + hungarian$last_V_length
+#   + hungarian$penult_V_height #by putting "#" at beginning
+#   + hungarian$penult_V_length #I told R to ignore the line
+   + hungarian$B_height
+   + hungarian$B_length
+   , family = binomial)
+summary(hungarian.glm)
+#regression equation is
+# y = 1 / (1+exp(-1*(10.0169+-4.8679*num_of_Vs+
+#   -3.1713*last_V_height+1.0355*last_V_length+
+#   0.6517*B_height+0.1940*B_length)))
+#I'll plug in values for just one imaginary item:
+1 / (1+exp(-1*(10.0169+-4.8679*2+
+   -3.1713*1+1.0355*0+
+   0.6517*2+0.1940*1))) #2 neutral vowels, final is high
+#and short; back V is high-mid and long
+#Model predicts that 19.89611 % of words like this have -nak
+
+
+##Make two models, one with a superset of the other's indep. variables
+hungarian.glm_complex = glm(hungarian$is_output_nak ~
+    hungarian$last_V_height
+   + hungarian$last_V_length
+   + hungarian$B_height
+   , family = binomial)
+summary(hungarian.glm_complex)
+
+hungarian.glm_simpler = glm(hungarian$is_output_nak ~
+    hungarian$last_V_height
+   + hungarian$last_V_length
+   , family = binomial)
+summary(hungarian.glm_simpler)
+
+##Use anova() to get a p-value from their likelihood ratio
+anova(hungarian.glm_simpler, hungarian.glm_complex, 
+	test="Chisq")
+
+
+
+
+
+
+

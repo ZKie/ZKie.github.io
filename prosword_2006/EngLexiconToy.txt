@@ -1,0 +1,9 @@
+952	able
+100	afraid
+1	ablebodied
+1075	un
+1	unaware
+50	aware
+7	unable
+2	unarmed
+1	unawares
